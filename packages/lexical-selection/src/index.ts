@@ -367,15 +367,16 @@ export function $patchStyleText(
   const firstNodeTextLength = firstNodeText.length;
   const focusOffset = focus.offset;
   let anchorOffset = anchor.offset;
-  let startOffset;
-  let endOffset;
   const isBefore = anchor.isBefore(focus);
-  startOffset = isBefore ? anchorOffset : focusOffset;
-  endOffset = isBefore ? focusOffset : anchorOffset;
+  let startOffset = isBefore ? anchorOffset : focusOffset;
+  let endOffset = isBefore ? focusOffset : anchorOffset;
+  const startType = isBefore ? anchor.type : focus.type;
+  const endType = isBefore ? focus.type : anchor.type;
+  const endKey = isBefore ? focus.key : anchor.key;
 
   // This is the case where the user only selected the very end of the
   // first node so we don't want to include it in the formatting change.
-  if (startOffset === firstNode.getTextContentSize()) {
+  if ($isTextNode(firstNode) && startOffset === firstNodeTextLength) {
     const nextSibling = firstNode.getNextSibling();
 
     if ($isTextNode(nextSibling)) {
@@ -389,8 +390,18 @@ export function $patchStyleText(
   // This is the case where we only selected a single node
   if (firstNode.is(lastNode)) {
     if ($isTextNode(firstNode)) {
-      startOffset = anchorOffset > focusOffset ? focusOffset : anchorOffset;
-      endOffset = anchorOffset > focusOffset ? anchorOffset : focusOffset;
+      startOffset =
+        startType === 'element'
+          ? 0
+          : anchorOffset > focusOffset
+          ? focusOffset
+          : anchorOffset;
+      endOffset =
+        endType === 'element'
+          ? firstNodeTextLength
+          : anchorOffset > focusOffset
+          ? anchorOffset
+          : focusOffset;
 
       // No actual text is selected, so do nothing.
       if (startOffset === endOffset) {
@@ -411,7 +422,10 @@ export function $patchStyleText(
       }
     } // multiple nodes selected.
   } else {
-    if ($isTextNode(firstNode)) {
+    if (
+      $isTextNode(firstNode) &&
+      startOffset < firstNode.getTextContentSize()
+    ) {
       if (startOffset !== 0) {
         // the entire first node isn't selected, so split it
         firstNode = firstNode.splitText(startOffset)[1];
@@ -424,6 +438,14 @@ export function $patchStyleText(
     if ($isTextNode(lastNode)) {
       const lastNodeText = lastNode.getTextContent();
       const lastNodeTextLength = lastNodeText.length;
+
+      // The last node might not actually be the end node
+      //
+      // If not, assume the last node is fully-selected unless the end offset is
+      // zero.
+      if (lastNode.__key !== endKey && endOffset !== 0) {
+        endOffset = lastNodeTextLength;
+      }
 
       // if the entire last node isn't selected, split it
       if (endOffset !== lastNodeTextLength) {
