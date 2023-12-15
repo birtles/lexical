@@ -1625,16 +1625,16 @@ export class RangeSelection extends INTERNAL_PointSelection {
       );
       return selection.insertNodes(nodes);
     }
-    const firstBlock = $getAncestor(this.anchor.getNode(), INTERNAL_$isBlock)!;
+    const firstElement = $getAncestor(this.anchor.getNode(), $isElementNode)!;
     const last = nodes[nodes.length - 1]!;
 
     // CASE 1: insert inside a code block
-    if ('__language' in firstBlock && $isElementNode(firstBlock)) {
+    if ('__language' in firstElement) {
       if ('__language' in nodes[0]) {
         this.insertText(nodes[0].getTextContent());
       } else {
         const index = removeTextAndSplitBlock(this);
-        firstBlock.splice(index, 0, nodes);
+        firstElement.splice(index, 0, nodes);
         last.selectEnd();
       }
       return;
@@ -1645,12 +1645,8 @@ export class RangeSelection extends INTERNAL_PointSelection {
       ($isElementNode(node) || $isDecoratorNode(node)) && !node.isInline();
 
     if (!nodes.some(notInline)) {
-      invariant(
-        $isElementNode(firstBlock),
-        "Expected 'firstBlock' to be an ElementNode",
-      );
       const index = removeTextAndSplitBlock(this);
-      firstBlock.splice(index, 0, nodes);
+      firstElement.splice(index, 0, nodes);
       last.selectEnd();
       return;
     }
@@ -1665,23 +1661,18 @@ export class RangeSelection extends INTERNAL_PointSelection {
       $isElementNode(node) &&
       INTERNAL_$isBlock(node) &&
       !node.isEmpty() &&
-      $isElementNode(firstBlock) &&
-      (!firstBlock.isEmpty() || isLI(firstBlock));
+      (!firstElement.isEmpty() || isLI(firstElement));
 
-    const shouldInsert = !$isElementNode(firstBlock) || !firstBlock.isEmpty();
+    const shouldInsert = !firstElement.isEmpty();
     const insertedParagraph = shouldInsert ? this.insertParagraph() : null;
     const lastToInsert = blocks[blocks.length - 1];
     let firstToInsert = blocks[0];
     if (isMergeable(firstToInsert)) {
-      invariant(
-        $isElementNode(firstBlock),
-        "Expected 'firstBlock' to be an ElementNode",
-      );
-      firstBlock.append(...firstToInsert.getChildren());
+      firstElement.append(...firstToInsert.getChildren());
       firstToInsert = blocks[1];
     }
     if (firstToInsert) {
-      insertRangeAfter(firstBlock, firstToInsert);
+      insertRangeAfter(firstElement, firstToInsert);
     }
     const lastInsertedBlock = $getAncestor(nodeToSelect, INTERNAL_$isBlock)!;
 
@@ -1693,17 +1684,15 @@ export class RangeSelection extends INTERNAL_PointSelection {
       lastInsertedBlock.append(...insertedParagraph.getChildren());
       insertedParagraph.remove();
     }
-    if ($isElementNode(firstBlock) && firstBlock.isEmpty()) {
-      firstBlock.remove();
+    if (firstElement.isEmpty()) {
+      firstElement.remove();
     }
 
     nodeToSelect.selectEnd();
 
     // To understand this take a look at the test "can wrap post-linebreak nodes into new element"
-    const lastChild = $isElementNode(firstBlock)
-      ? firstBlock.getLastChild()
-      : null;
-    if ($isLineBreakNode(lastChild) && lastInsertedBlock !== firstBlock) {
+    const lastChild = firstElement.getLastChild();
+    if ($isLineBreakNode(lastChild) && lastInsertedBlock !== firstElement) {
       lastChild.remove();
     }
   }
