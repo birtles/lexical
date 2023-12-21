@@ -1625,16 +1625,16 @@ export class RangeSelection extends INTERNAL_PointSelection {
       );
       return selection.insertNodes(nodes);
     }
-    const firstElement = $getAncestor(this.anchor.getNode(), $isElementNode)!;
+    const firstBlock = $getAncestor(this.anchor.getNode(), INTERNAL_$isBlock)!;
     const last = nodes[nodes.length - 1]!;
 
     // CASE 1: insert inside a code block
-    if ('__language' in firstElement) {
+    if ('__language' in firstBlock && $isElementNode(firstBlock)) {
       if ('__language' in nodes[0]) {
         this.insertText(nodes[0].getTextContent());
       } else {
         const index = removeTextAndSplitBlock(this);
-        firstElement.splice(index, 0, nodes);
+        firstBlock.splice(index, 0, nodes);
         last.selectEnd();
       }
       return;
@@ -1645,8 +1645,12 @@ export class RangeSelection extends INTERNAL_PointSelection {
       ($isElementNode(node) || $isDecoratorNode(node)) && !node.isInline();
 
     if (!nodes.some(notInline)) {
+      invariant(
+        $isElementNode(firstBlock),
+        "Expected 'firstBlock' to be an ElementNode",
+      );
       const index = removeTextAndSplitBlock(this);
-      firstElement.splice(index, 0, nodes);
+      firstBlock.splice(index, 0, nodes);
       last.selectEnd();
       return;
     }
@@ -1661,18 +1665,23 @@ export class RangeSelection extends INTERNAL_PointSelection {
       $isElementNode(node) &&
       INTERNAL_$isBlock(node) &&
       !node.isEmpty() &&
-      (!firstElement.isEmpty() || isLI(firstElement));
+      $isElementNode(firstBlock) &&
+      (!firstBlock.isEmpty() || isLI(firstBlock));
 
-    const shouldInsert = !firstElement.isEmpty();
+    const shouldInsert = !$isElementNode(firstBlock) || !firstBlock.isEmpty();
     const insertedParagraph = shouldInsert ? this.insertParagraph() : null;
     const lastToInsert = blocks[blocks.length - 1];
     let firstToInsert = blocks[0];
     if (isMergeable(firstToInsert)) {
-      firstElement.append(...firstToInsert.getChildren());
+      invariant(
+        $isElementNode(firstBlock),
+        "Expected 'firstBlock' to be an ElementNode",
+      );
+      firstBlock.append(...firstToInsert.getChildren());
       firstToInsert = blocks[1];
     }
     if (firstToInsert) {
-      insertRangeAfter(firstElement, firstToInsert);
+      insertRangeAfter(firstBlock, firstToInsert);
     }
     const lastInsertedBlock = $getAncestor(nodeToSelect, INTERNAL_$isBlock)!;
 
@@ -1684,15 +1693,17 @@ export class RangeSelection extends INTERNAL_PointSelection {
       lastInsertedBlock.append(...insertedParagraph.getChildren());
       insertedParagraph.remove();
     }
-    if (firstElement.isEmpty()) {
-      firstElement.remove();
+    if ($isElementNode(firstBlock) && firstBlock.isEmpty()) {
+      firstBlock.remove();
     }
 
     nodeToSelect.selectEnd();
 
     // To understand this take a look at the test "can wrap post-linebreak nodes into new element"
-    const lastChild = firstElement.getLastChild();
-    if ($isLineBreakNode(lastChild) && lastInsertedBlock !== firstElement) {
+    const lastChild = $isElementNode(firstBlock)
+      ? firstBlock.getLastChild()
+      : null;
+    if ($isLineBreakNode(lastChild) && lastInsertedBlock !== firstBlock) {
       lastChild.remove();
     }
   }
@@ -3148,37 +3159,59 @@ function removeTextAndSplitBlock(selection: RangeSelection): number {
   if (!selection.isCollapsed()) {
     selection.removeText();
   }
-  const point = selection.anchor;
-  const pointNode = point.getNode();
-  if (!$isTextNode(pointNode)) {
-    return point.offset;
-  }
-  const pointParent = pointNode.getParent();
 
-  if (!pointParent) {
+  const anchor = selection.anchor;
+  let node = anchor.getNode();
+  let offset = anchor.offset;
+
+  while (!INTERNAL_$isBlock(node)) {
+    [node, offset] = splitNodeAtPoint(node, offset);
+  }
+
+  return offset;
+}
+
+function splitNodeAtPoint(
+  node: LexicalNode,
+  offset: number,
+): [parent: ElementNode, offset: number] {
+  const parent = node.getParent();
+  if (!parent) {
     const paragraph = $createParagraphNode();
     $getRoot().append(paragraph);
     paragraph.select();
-    return 0;
+    return [$getRoot(), 0];
   }
 
-  const split = pointNode.splitText(point.offset);
-  if (split.length === 0) {
-    return 0;
-  }
-  const x = point.offset === 0 ? 0 : 1;
-  const index = split[0].getIndexWithinParent() + x;
+  if ($isTextNode(node)) {
+    const split = node.splitText(offset);
+    if (split.length === 0) {
+      return [parent, 0];
+    }
+    const x = offset === 0 ? 0 : 1;
+    const index = split[0].getIndexWithinParent() + x;
 
-  if (!pointParent.isInline() || index === 0) {
-    return index;
+    return [parent, index];
   }
 
-  const firstToAppend = pointParent.getChildAtIndex(index);
+  if (!$isElementNode(node) || offset === 0) {
+    return [parent, node.getIndexWithinParent()];
+  }
+
+  const firstToAppend = node.getChildAtIndex(offset);
   if (firstToAppend) {
-    const newBlock = pointParent.insertNewAfter(selection) as ElementNode;
-    newBlock.append(firstToAppend, ...firstToAppend.getNextSiblings());
+    const insertPoint = new RangeSelection(
+      $createPoint(node.__key, offset, 'element'),
+      $createPoint(node.__key, offset, 'element'),
+      0,
+      '',
+    );
+    const newElement = node.insertNewAfter(insertPoint) as ElementNode | null;
+    if (newElement) {
+      newElement.append(firstToAppend, ...firstToAppend.getNextSiblings());
+    }
   }
-  return pointParent.getIndexWithinParent() + x;
+  return [parent, node.getIndexWithinParent() + 1];
 }
 
 function $wrapInlineNodes(nodes: LexicalNode[]) {
