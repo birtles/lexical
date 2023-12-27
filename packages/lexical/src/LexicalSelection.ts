@@ -3186,7 +3186,7 @@ function splitNodeAtPoint(
   if ($isTextNode(node)) {
     const split = node.splitText(offset);
     if (split.length === 0) {
-      return [parent, 0];
+      return [parent, node.getIndexWithinParent()];
     }
     const x = offset === 0 ? 0 : 1;
     const index = split[0].getIndexWithinParent() + x;
